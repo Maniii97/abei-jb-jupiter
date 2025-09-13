@@ -1,0 +1,46 @@
+# Git
+.git
+.gitignore
+README.md
+.github/
+
+# Documentation
+docs/
+*.md
+
+# Development files
+.air.toml
+Makefile
+.golangci.yml
+
+# IDE
+.vscode/
+.idea/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.log
+
+# Test files
+*_test.go
+test/
+coverage.out
+coverage.html
+
+# Build artifacts
+bin/
+dist/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Dependencies (will be downloaded in container)
+vendor/

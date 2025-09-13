@@ -9,15 +9,17 @@ import (
 type BookingService struct {
 	bookingRepo     *repository.BookingRepository
 	seatLockService *SeatLockService
+	waitlistService WaitlistServiceInterface
 }
 
 // Ensure BookingService implements BookingServiceInterface
 var _ BookingServiceInterface = (*BookingService)(nil)
 
-func NewBookingService(bookingRepo *repository.BookingRepository, seatLockService *SeatLockService) *BookingService {
+func NewBookingService(bookingRepo *repository.BookingRepository, seatLockService *SeatLockService, waitlistService WaitlistServiceInterface) *BookingService {
 	return &BookingService{
 		bookingRepo:     bookingRepo,
 		seatLockService: seatLockService,
+		waitlistService: waitlistService,
 	}
 }
 

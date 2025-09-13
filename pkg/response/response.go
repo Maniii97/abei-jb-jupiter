@@ -123,6 +123,26 @@ type EventStatsResponse struct {
 	BookingRate         float64 `json:"booking_rate"`
 }
 
+// Waitlist responses
+type WaitlistResponse struct {
+	EventID    uint       `json:"event_id"`
+	UserID     uint       `json:"user_id"`
+	Position   int        `json:"position"`
+	Status     string     `json:"status"`
+	JoinedAt   time.Time  `json:"joined_at"`
+	NotifiedAt *time.Time `json:"notified_at,omitempty"`
+}
+
+// Notification responses
+type NotificationResponse struct {
+	Type      string    `json:"type"`
+	UserID    uint      `json:"user_id"`
+	EventID   uint      `json:"event_id"`
+	Message   string    `json:"message"`
+	Timestamp time.Time `json:"timestamp"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
 // Generic responses
 type ErrorResponse struct {
 	Error   string `json:"error"`

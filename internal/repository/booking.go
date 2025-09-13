@@ -23,8 +23,139 @@ func NewBookingRepository(db *gorm.DB, seatLockRepository *SeatLockRepository) *
 	}
 }
 
-// CreateBookingIntent creates a booking intent and locks the seat
+// CreateBookingIntent creates a booking intent using Redis-first locking approach
 func (s *BookingRepository) CreateBookingIntent(ctx context.Context, userID, seatID uint) (*entities.BookingIntent, error) {
+	// Step 1: Check Redis for existing lock first (fast path)
+	isLocked, _, err := s.seatLockRepository.IsLocked(ctx, seatID)
+	if err != nil {
+		// Redis is down, fall back to database-only approach
+		return s.createBookingIntentDBFallback(ctx, userID, seatID)
+	}
+
+	if isLocked {
+		// Check if it's locked by the same user
+		isLockedByUser, _, err := s.seatLockRepository.IsLockedByUser(ctx, seatID, userID)
+		if err != nil {
+			// Redis error, fall back to database
+			return s.createBookingIntentDBFallback(ctx, userID, seatID)
+		}
+
+		if isLockedByUser {
+			// User already has a lock on this seat
+			return nil, errors.NewConflictError("You already have an active booking intent for this seat", nil)
+		} else {
+			// Seat is locked by another user
+			return nil, errors.NewConflictError(constants.ErrSeatAlreadyLocked, nil)
+		}
+	}
+
+	// Validate seat availability in database (without transaction)
+	var seat entities.Seat
+	if err := s.db.WithContext(ctx).Preload("Event").First(&seat, seatID).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, errors.NewNotFoundError("Seat not found", errors.ErrRecordNotFound)
+		}
+		return nil, errors.NewInternalError("Failed to fetch seat", err)
+	}
+
+	// Check if seat is available
+	if !seat.IsAvailable {
+		return nil, errors.NewBadRequestError(constants.ErrSeatNotAvailable, nil)
+	}
+
+	// Check if seat is locked in database and if the lock has expired
+	if seat.IsLocked && seat.LockedAt != nil {
+		lockDuration := time.Duration(constants.SeatLockDuration) * time.Minute
+		if time.Now().Sub(*seat.LockedAt) <= lockDuration {
+			// Lock is still valid
+			return nil, errors.NewConflictError(constants.ErrSeatAlreadyLocked, nil)
+		}
+		// Lock has expired, we can proceed (will clean up the DB lock later)
+	}
+
+	// Check if event is still active and in the future
+	if seat.Event.Status != constants.EventStatusActive {
+		return nil, errors.NewBadRequestError("Event is not active", nil)
+	}
+
+	if seat.Event.StartTime.Before(time.Now()) {
+		return nil, errors.NewBadRequestError("Event has already started", nil)
+	}
+
+	// Check if event still has available capacity
+	if seat.Event.AvailableSeats <= 0 {
+		return nil, errors.NewBadRequestError(constants.ErrEventSoldOut, nil)
+	}
+
+	// Try to acquire Redis lock first
+	tempIntentID := fmt.Sprintf("temp_%d_%d", userID, time.Now().UnixNano())
+	if err := s.seatLockRepository.LockSeat(ctx, seatID, userID, tempIntentID); err != nil {
+		// Redis lock failed, another user might have acquired it in the meantime
+		return nil, errors.NewConflictError(constants.ErrSeatAlreadyLocked, err)
+	}
+
+	// Create booking intent in database (minimal transaction)
+	tx := s.db.WithContext(ctx).Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+			// Cleanup Redis lock on panic
+			s.seatLockRepository.UnlockSeat(ctx, seatID, userID, tempIntentID)
+		}
+	}()
+
+	// Create booking intent
+	intent := &entities.BookingIntent{
+		UserID:  userID,
+		EventID: seat.EventID,
+		SeatID:  seatID,
+		Status:  constants.IntentStatusPending,
+	}
+
+	if err := tx.Create(intent).Error; err != nil {
+		tx.Rollback()
+		s.seatLockRepository.UnlockSeat(ctx, seatID, userID, tempIntentID)
+		return nil, errors.NewInternalError("Failed to create booking intent", err)
+	}
+
+	// Update Redis lock with real intent ID
+	realIntentID := fmt.Sprintf("%d", intent.ID)
+	if err := s.seatLockRepository.UnlockSeat(ctx, seatID, userID, tempIntentID); err != nil {
+		// Log warning but continue
+		fmt.Printf("Warning: Failed to unlock temp Redis lock: %v\n", err)
+	}
+
+	if err := s.seatLockRepository.LockSeat(ctx, seatID, userID, realIntentID); err != nil {
+		// Redis lock with real ID failed, fall back to database lock
+		fmt.Printf("Warning: Redis lock with real intent ID failed, falling back to database lock: %v\n", err)
+		if err := s.lockSeatInDatabase(tx, &seat, userID); err != nil {
+			tx.Rollback()
+			return nil, err
+		}
+	}
+
+	// Commit transaction
+	if err := tx.Commit().Error; err != nil {
+		// Cleanup Redis lock if transaction failed
+		s.seatLockRepository.UnlockSeat(ctx, seatID, userID, realIntentID)
+		return nil, errors.NewInternalError("Failed to commit booking intent", err)
+	}
+
+	// Load the intent with relationships
+	if err := s.db.WithContext(ctx).
+		Preload("User").
+		Preload("Event.Venue").
+		Preload("Event").
+		Preload("Seat").
+		First(intent, intent.ID).Error; err != nil {
+		return nil, errors.NewInternalError("Failed to load booking intent", err)
+	}
+
+	return intent, nil
+}
+
+// createBookingIntentDBFallback falls back to the original database-transaction approach
+func (s *BookingRepository) createBookingIntentDBFallback(ctx context.Context, userID, seatID uint) (*entities.BookingIntent, error) {
 	// Start transaction
 	tx := s.db.WithContext(ctx).Begin()
 	defer func() {
@@ -86,30 +217,13 @@ func (s *BookingRepository) CreateBookingIntent(ctx context.Context, userID, sea
 	}
 
 	// Lock seat in database
-	if err := tx.Model(&seat).Updates(map[string]interface{}{
-		"is_locked": true,
-		"locked_at": time.Now(),
-		"locked_by": userID,
-	}).Error; err != nil {
+	if err := s.lockSeatInDatabase(tx, &seat, userID); err != nil {
 		tx.Rollback()
-		return nil, errors.NewInternalError("Failed to lock seat", err)
+		return nil, err
 	}
 
-	// Lock seat in Redis using the booking intent ID (best effort)
-	intentIDStr := fmt.Sprintf("%d", intent.ID)
-	redisLockErr := s.seatLockRepository.LockSeat(ctx, seatID, userID, intentIDStr)
-	if redisLockErr != nil {
-		// Log Redis failure but continue with database-only locking
-		fmt.Printf("Warning: Redis lock failed, falling back to database-only locking: %v\n", redisLockErr)
-		// We don't rollback here - database lock is sufficient for consistency
-	}
-
-	// Commit transaction (database lock is the source of truth)
+	// Commit transaction
 	if err := tx.Commit().Error; err != nil {
-		// Try to cleanup Redis lock if it was successful but DB commit failed
-		if redisLockErr == nil {
-			s.seatLockRepository.UnlockSeat(ctx, seatID, userID, intentIDStr)
-		}
 		return nil, errors.NewInternalError("Failed to commit booking intent", err)
 	}
 
@@ -124,6 +238,18 @@ func (s *BookingRepository) CreateBookingIntent(ctx context.Context, userID, sea
 	}
 
 	return intent, nil
+}
+
+// lockSeatInDatabase locks a seat in the database
+func (s *BookingRepository) lockSeatInDatabase(tx *gorm.DB, seat *entities.Seat, userID uint) error {
+	if err := tx.Model(seat).Updates(map[string]interface{}{
+		"is_locked": true,
+		"locked_at": time.Now(),
+		"locked_by": userID,
+	}).Error; err != nil {
+		return errors.NewInternalError("Failed to lock seat in database", err)
+	}
+	return nil
 }
 
 // ConfirmBooking confirms a booking intent after successful payment

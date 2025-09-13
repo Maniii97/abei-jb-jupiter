@@ -77,6 +77,28 @@ func (s *SeatLockRepository) IsLocked(ctx context.Context, seatID uint) (bool, s
 	return true, result.Val(), nil
 }
 
+// IsLockedByUser checks if a seat is locked by a specific user
+func (s *SeatLockRepository) IsLockedByUser(ctx context.Context, seatID uint, userID uint) (bool, string, error) {
+	key := fmt.Sprintf("%s%d", constants.SeatLockPrefix, seatID)
+
+	result := s.redis.Get(ctx, key)
+	if result.Err() == redis.Nil {
+		return false, "", nil
+	}
+	if result.Err() != nil {
+		return false, "", fmt.Errorf("failed to check seat lock: %w", result.Err())
+	}
+
+	lockValue := result.Val()
+	// Lock value format: "userID:intentID"
+	expectedPrefix := fmt.Sprintf("%d:", userID)
+	if len(lockValue) >= len(expectedPrefix) && lockValue[:len(expectedPrefix)] == expectedPrefix {
+		return true, lockValue, nil
+	}
+
+	return false, lockValue, nil
+}
+
 // ExtendLock extends the TTL of an existing lock
 func (s *SeatLockRepository) ExtendLock(ctx context.Context, seatID uint, userID uint, intentID string) error {
 	key := fmt.Sprintf("%s%d", constants.SeatLockPrefix, seatID)

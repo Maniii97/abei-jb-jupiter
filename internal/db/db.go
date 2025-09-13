@@ -37,10 +37,11 @@ func Connect(dsn string) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	// Connection pool settings
-	sqlDB.SetMaxIdleConns(10)           // Maximum idle connections
-	sqlDB.SetMaxOpenConns(25)           // Maximum open connections
-	sqlDB.SetConnMaxLifetime(time.Hour) // Connection lifetime
+	// connection pool to handle high concurrency
+	sqlDB.SetMaxIdleConns(25)
+	sqlDB.SetMaxOpenConns(100)
+	sqlDB.SetConnMaxLifetime(30 * time.Minute)
+	sqlDB.SetConnMaxIdleTime(5 * time.Minute)
 
 	return db, nil
 }

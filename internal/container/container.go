@@ -15,16 +15,18 @@ import (
 
 // Container holds all application dependencies
 type Container struct {
-	Config          *config.Config
-	DB              *gorm.DB
-	Redis           *redis.Client
-	UserService     *services.UserService
-	JWTService      *services.JWTService
-	EventService    *services.EventService
-	VenueService    *services.VenueService
-	BookingService  *services.BookingService
-	SeatLockService *services.SeatLockService
-	JWTMiddleware   *middleware.JWTMiddleware
+	Config           *config.Config
+	DB               *gorm.DB
+	Redis            *redis.Client
+	UserService      *services.UserService
+	JWTService       *services.JWTService
+	EventService     *services.EventService
+	VenueService     *services.VenueService
+	BookingService   *services.BookingService
+	SeatLockService  *services.SeatLockService
+	AnalyticsService services.AnalyticsServiceInterface
+	JWTMiddleware    *middleware.JWTMiddleware
+	RateLimiter      *middleware.RateLimiter
 }
 
 // NewContainer creates a new dependency container
@@ -62,6 +64,7 @@ func NewContainer() (*Container, error) {
 	userRepo := repository.NewUserRepository(database)
 	venueRepo := repository.NewVenueRepository(database)
 	eventRepo := repository.NewEventRepository(database)
+	analyticsRepo := repository.NewAnalyticsRepository(database)
 
 	// Initialize services
 	jwtService := services.NewJWTService(cfg.JwtSecret)
@@ -69,6 +72,7 @@ func NewContainer() (*Container, error) {
 	venueService := services.NewVenueService(venueRepo)
 	eventService := services.NewEventService(eventRepo)
 	seatLockService := services.NewSeatLockService(redisClient)
+	analyticsService := services.NewAnalyticsService(analyticsRepo)
 
 	// BookingRepository needs SeatLockRepository as dependency
 	seatLockRepo := repository.NewSeatLockRepository(redisClient)
@@ -76,18 +80,21 @@ func NewContainer() (*Container, error) {
 	bookingService := services.NewBookingService(bookingRepo, seatLockService)
 
 	jwtMiddleware := middleware.NewJWTMiddleware(jwtService)
+	rateLimiter := middleware.NewRateLimiter(redisClient)
 
 	return &Container{
-		Config:          cfg,
-		DB:              database,
-		Redis:           redisClient,
-		UserService:     userService,
-		JWTService:      jwtService,
-		EventService:    eventService,
-		VenueService:    venueService,
-		BookingService:  bookingService,
-		SeatLockService: seatLockService,
-		JWTMiddleware:   jwtMiddleware,
+		Config:           cfg,
+		DB:               database,
+		Redis:            redisClient,
+		UserService:      userService,
+		JWTService:       jwtService,
+		EventService:     eventService,
+		VenueService:     venueService,
+		BookingService:   bookingService,
+		SeatLockService:  seatLockService,
+		AnalyticsService: analyticsService,
+		JWTMiddleware:    jwtMiddleware,
+		RateLimiter:      rateLimiter,
 	}, nil
 }
 

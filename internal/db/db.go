@@ -17,14 +17,15 @@ func Connect(dsn string) (*gorm.DB, error) {
 		logger.Config{
 			SlowThreshold:             200 * time.Millisecond, // Slow SQL threshold
 			LogLevel:                  logger.Warn,            // Log level
-			IgnoreRecordNotFoundError: true,                   // Ignore ErrRecordNotFound error for logger
+			IgnoreRecordNotFoundError: false,                  // Ignore ErrRecordNotFound error for logger
 			Colorful:                  false,                  // Disable color for production
 		},
 	)
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
-		Logger:      newLogger,
-		PrepareStmt: true, // Enable prepared statement cache
+		Logger:                                   newLogger,
+		PrepareStmt:                              false, // Disable prepared statement cache to avoid conflicts
+		DisableForeignKeyConstraintWhenMigrating: true,
 	})
 	if err != nil {
 		return nil, err

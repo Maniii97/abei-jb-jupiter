@@ -1,8 +1,6 @@
 package request
 
 import (
-	"encoding/json"
-	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -30,7 +28,8 @@ type CreateVenueRequest struct {
 	City        string `json:"city" binding:"required"`
 	State       string `json:"state" binding:"required"`
 	Country     string `json:"country" binding:"required"`
-	Capacity    int    `json:"capacity" binding:"required,min=1"`
+	Rows        int    `json:"rows" binding:"required,min=1"`
+	Columns     int    `json:"columns" binding:"required,min=1"`
 	Description string `json:"description"`
 }
 
@@ -40,7 +39,8 @@ type UpdateVenueRequest struct {
 	City        *string `json:"city"`
 	State       *string `json:"state"`
 	Country     *string `json:"country"`
-	Capacity    *int    `json:"capacity"`
+	Rows        *int    `json:"rows"`
+	Columns     *int    `json:"columns"`
 	Description *string `json:"description"`
 }
 
@@ -74,12 +74,12 @@ type CreateBookingIntentRequest struct {
 }
 
 type ConfirmBookingRequest struct {
-	IntentID  string `json:"intent_id" binding:"required"`
-	PaymentID string `json:"payment_id" binding:"required"`
+	BookingIntentID uint   `json:"booking_intent_id" binding:"required"`
+	PaymentID       string `json:"payment_id" binding:"required"`
 }
 
 type CancelBookingIntentRequest struct {
-	IntentID string `json:"intent_id" binding:"required"`
+	BookingIntentID uint `json:"booking_intent_id" binding:"required"`
 }
 
 // Queue requests
@@ -112,9 +112,4 @@ func BindJSON(c *gin.Context, req interface{}) error {
 // Helper function to bind query parameters
 func BindQuery(c *gin.Context, req interface{}) error {
 	return c.ShouldBindQuery(req)
-}
-
-// Legacy support for non-Gin applications
-func DecodeJSON(r *http.Request, v interface{}) error {
-	return json.NewDecoder(r.Body).Decode(v)
 }

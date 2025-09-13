@@ -14,6 +14,7 @@ func SetupRoutes(deps *container.Container) *gin.Engine {
 	venueHandler := handlers.NewVenueHandler(deps.VenueService)
 	bookingHandler := handlers.NewBookingHandler(deps.BookingService)
 	analyticsHandler := handlers.NewAnalyticsHandler(deps.AnalyticsService)
+	waitlistHandler := handlers.NewWaitlistHandler(deps.WaitlistService)
 
 	r := gin.Default()
 
@@ -70,6 +71,16 @@ func SetupRoutes(deps *container.Container) *gin.Engine {
 			bookings.DELETE("/bookings/:id", bookingHandler.CancelBooking)
 			bookings.GET("/bookings", bookingHandler.GetUserBookings)
 			bookings.GET("/bookings/:id", bookingHandler.GetBookingByID)
+		}
+
+		// Waitlist management
+		waitlist := protected.Group("/waitlist")
+		waitlist.Use(deps.RateLimiter.UserRateLimit(30, time.Minute)) // 30 waitlist ops per user per minute
+		{
+			waitlist.POST("/events/:eventId/join", waitlistHandler.JoinWaitlist)
+			waitlist.GET("/events/:eventId/position", waitlistHandler.GetWaitlistPosition)
+			waitlist.DELETE("/events/:eventId/leave", waitlistHandler.LeaveWaitlist)
+			waitlist.GET("/events/:eventId/stats", waitlistHandler.GetWaitlistStats)
 		}
 	}
 

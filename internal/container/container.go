@@ -24,6 +24,7 @@ type Container struct {
 	VenueService     *services.VenueService
 	BookingService   *services.BookingService
 	SeatLockService  *services.SeatLockService
+	WaitlistService  *services.WaitlistService
 	AnalyticsService services.AnalyticsServiceInterface
 	JWTMiddleware    *middleware.JWTMiddleware
 	RateLimiter      *middleware.RateLimiter
@@ -77,7 +78,13 @@ func NewContainer() (*Container, error) {
 	// BookingRepository needs SeatLockRepository as dependency
 	seatLockRepo := repository.NewSeatLockRepository(redisClient)
 	bookingRepo := repository.NewBookingRepository(database, seatLockRepo)
-	bookingService := services.NewBookingService(bookingRepo, seatLockService)
+	
+	// Initialize waitlist services
+	waitlistRepo := repository.NewWaitlistRepository(redisClient)
+	waitlistService := services.NewWaitlistService(waitlistRepo, eventRepo, database)
+	
+	// BookingService needs WaitlistService as dependency
+	bookingService := services.NewBookingService(bookingRepo, seatLockService, waitlistService)
 
 	jwtMiddleware := middleware.NewJWTMiddleware(jwtService)
 	rateLimiter := middleware.NewRateLimiter(redisClient)
@@ -92,6 +99,7 @@ func NewContainer() (*Container, error) {
 		VenueService:     venueService,
 		BookingService:   bookingService,
 		SeatLockService:  seatLockService,
+		WaitlistService:  waitlistService,
 		AnalyticsService: analyticsService,
 		JWTMiddleware:    jwtMiddleware,
 		RateLimiter:      rateLimiter,

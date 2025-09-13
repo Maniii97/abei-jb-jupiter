@@ -55,6 +55,25 @@ type QueueServiceInterface interface {
 	GetQueueLength(ctx context.Context, eventID uint) (int64, error)
 }
 
+// WaitlistServiceInterface defines the contract for waitlist operations
+type WaitlistServiceInterface interface {
+	JoinWaitlist(ctx context.Context, userID, eventID uint) (*WaitlistEntry, error)
+	GetWaitlistPosition(ctx context.Context, userID, eventID uint) (*WaitlistEntry, error)
+	LeaveWaitlist(ctx context.Context, userID, eventID uint) error
+	GetWaitlistSize(ctx context.Context, eventID uint) (int, error)
+	ProcessSeatAvailability(ctx context.Context, eventID uint, availableSeats int) ([]*WaitlistEntry, error)
+	CleanupExpiredWaitlist(ctx context.Context) error
+	RemoveUserFromWaitlistAfterBooking(ctx context.Context, userID, eventID uint) error
+}
+
+type WaitlistEntry struct {
+	UserID    uint      `json:"user_id"`
+	EventID   uint      `json:"event_id"`
+	JoinedAt  time.Time `json:"joined_at"`
+	Position  int       `json:"position"`
+	NotifiedAt *time.Time `json:"notified_at,omitempty"`
+}
+
 // JWTServiceInterface defines the contract for JWT operations
 type JWTServiceInterface interface {
 	GenerateToken(userID uint, isAdmin bool) (string, error)

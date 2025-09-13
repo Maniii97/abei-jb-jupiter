@@ -13,6 +13,16 @@ type RedisClient struct {
 
 func NewRedisClient(url string) *RedisClient {
 	opt, _ := redis.ParseURL(url)
+
+	// Optimized connection pool for high-traffic scenarios
+	opt.PoolSize = 50 // this increases the number of connections in the pool, better for high concurrency
+	opt.MinIdleConns = 10
+	opt.MaxIdleConns = 25
+	opt.ConnMaxLifetime = 30 * time.Minute
+	opt.ConnMaxIdleTime = 5 * time.Minute
+	opt.MaxRetries = 3
+	opt.MaxRetryBackoff = 512 * time.Millisecond
+
 	client := redis.NewClient(opt)
 	return &RedisClient{Client: client}
 }

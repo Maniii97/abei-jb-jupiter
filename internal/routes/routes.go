@@ -3,6 +3,7 @@ package routes
 import (
 	"api/internal/container"
 	"api/internal/handlers"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -12,24 +13,40 @@ func SetupRoutes(deps *container.Container) *gin.Engine {
 	eventHandler := handlers.NewEventHandler(deps.EventService, deps.VenueService)
 	venueHandler := handlers.NewVenueHandler(deps.VenueService)
 	bookingHandler := handlers.NewBookingHandler(deps.BookingService)
+	analyticsHandler := handlers.NewAnalyticsHandler(deps.AnalyticsService)
 
 	r := gin.Default()
+
+	// global rate limiting - 1000 requests per minute per IP
+	r.Use(deps.RateLimiter.RateLimit(1000, time.Minute))
 
 	// Public API routes
 	api := r.Group("/api")
 	{
 		// Authentication
-		api.POST("/register", userHandler.Register)
-		api.POST("/login", userHandler.Login)
+		auth := api.Group("/")
+		auth.Use(deps.RateLimiter.RateLimit(10, time.Minute)) // 10 auth attempts per minute
+		{
+			auth.POST("/register", userHandler.Register)
+			auth.POST("/login", userHandler.Login)
+		}
 
 		// Events
-		api.GET("/events", eventHandler.GetEvents)
-		api.GET("/events/:id", eventHandler.GetEventByID)
-		api.GET("/events/:id/seats", eventHandler.GetAvailableSeats)
+		events := api.Group("/events")
+		events.Use(deps.RateLimiter.RateLimit(200, time.Minute)) // 200 requests per minute
+		{
+			events.GET("", eventHandler.GetEvents)
+			events.GET("/:id", eventHandler.GetEventByID)
+			events.GET("/:id/seats", eventHandler.GetAvailableSeats)
+		}
 
 		// Venues
-		api.GET("/venues", venueHandler.GetVenues)
-		api.GET("/venues/:id", venueHandler.GetVenueByID)
+		venues := api.Group("/venues")
+		venues.Use(deps.RateLimiter.RateLimit(200, time.Minute)) // 200 requests per minute
+		{
+			venues.GET("", venueHandler.GetVenues)
+			venues.GET("/:id", venueHandler.GetVenueByID)
+		}
 	}
 
 	// Protected API routes
@@ -37,20 +54,29 @@ func SetupRoutes(deps *container.Container) *gin.Engine {
 	protected.Use(deps.JWTMiddleware.AuthRequired())
 	{
 		// User profile
-		protected.GET("/profile", userHandler.GetProfile)
+		profile := protected.Group("/")
+		profile.Use(deps.RateLimiter.UserRateLimit(100, time.Minute)) // 100 requests per user per minute
+		{
+			profile.GET("/profile", userHandler.GetProfile)
+		}
 
 		// Booking management
-		protected.POST("/booking-intents", bookingHandler.CreateBookingIntent)
-		protected.POST("/bookings/confirm", bookingHandler.ConfirmBooking)
-		protected.POST("/booking-intents/cancel", bookingHandler.CancelBookingIntent)
-		protected.DELETE("/bookings/:id", bookingHandler.CancelBooking)
-		protected.GET("/bookings", bookingHandler.GetUserBookings)
-		protected.GET("/bookings/:id", bookingHandler.GetBookingByID)
+		bookings := protected.Group("/")
+		bookings.Use(deps.RateLimiter.UserRateLimit(50, time.Minute)) // 50 booking ops per user per minute
+		{
+			bookings.POST("/booking-intents", bookingHandler.CreateBookingIntent)
+			bookings.POST("/bookings/confirm", bookingHandler.ConfirmBooking)
+			bookings.POST("/booking-intents/cancel", bookingHandler.CancelBookingIntent)
+			bookings.DELETE("/bookings/:id", bookingHandler.CancelBooking)
+			bookings.GET("/bookings", bookingHandler.GetUserBookings)
+			bookings.GET("/bookings/:id", bookingHandler.GetBookingByID)
+		}
 	}
 
 	// Admin only routes
 	admin := protected.Group("/admin")
 	admin.Use(deps.JWTMiddleware.AdminRequired())
+	admin.Use(deps.RateLimiter.UserRateLimit(200, time.Minute)) // 200 admin ops per minute
 	{
 		// User management
 		admin.GET("/users", userHandler.ListUsers)
@@ -65,6 +91,9 @@ func SetupRoutes(deps *container.Container) *gin.Engine {
 		admin.PUT("/events/:id", eventHandler.UpdateEvent)
 		admin.DELETE("/events/:id", eventHandler.DeleteEvent)
 		admin.GET("/events/:id/stats", eventHandler.GetEventStats)
+
+		// Analytics
+		admin.GET("/analytics/bookings", analyticsHandler.GetBookingAnalytics)
 	}
 
 	return r

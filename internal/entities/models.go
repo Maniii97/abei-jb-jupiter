@@ -26,7 +26,8 @@ type Venue struct {
 	City        string `gorm:"not null;size:100"`
 	State       string `gorm:"not null;size:100"`
 	Country     string `gorm:"not null;size:100"`
-	Capacity    int    `gorm:"not null"`
+	Rows        int    `gorm:"not null"`
+	Columns     int    `gorm:"not null"`
 	Description string `gorm:"type:text"`
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
@@ -45,7 +46,7 @@ type Event struct {
 	EventType      string    `gorm:"not null;size:50;index"`                  // concert, theater, sports, etc. - add index
 	Status         string    `gorm:"not null;size:20;default:'active';index"` // active, cancelled, completed - add index
 	IsHighDemand   bool      `gorm:"default:false;index"`                     // for queue system - add index
-	AvailableSeats int       `gorm:"default:0;index"`
+	AvailableSeats int       `gorm:"default:0;index;check:available_seats >= 0"`
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 	Seats          []Seat          `gorm:"foreignKey:EventID"`
@@ -57,9 +58,8 @@ type Seat struct {
 	ID             uint       `gorm:"primaryKey"`
 	EventID        uint       `gorm:"index;not null"`
 	Event          Event      `gorm:"foreignKey:EventID"`
-	SeatNumber     string     `gorm:"not null;size:20;index:idx_seat_lookup"`
-	Row            string     `gorm:"not null;size:10;index:idx_seat_lookup"`
-	Section        string     `gorm:"size:50;index:idx_seat_lookup"`
+	Row            int        `gorm:"not null;index"`
+	Column         int        `gorm:"not null;index"`
 	SeatType       string     `gorm:"not null;size:50;index"` // VIP, Premium, Standard - add index
 	Price          float64    `gorm:"not null"`
 	IsAvailable    bool       `gorm:"default:true;index"`
@@ -73,29 +73,26 @@ type Seat struct {
 }
 
 type BookingIntent struct {
-	ID              uint      `gorm:"primaryKey"`
-	UserID          uint      `gorm:"index;not null"`
-	User            User      `gorm:"foreignKey:UserID"`
-	EventID         uint      `gorm:"index;not null"`
-	Event           Event     `gorm:"foreignKey:EventID"`
-	SeatID          uint      `gorm:"index;not null"`
-	Seat            Seat      `gorm:"foreignKey:SeatID"`
-	IntentID        string    `gorm:"unique;not null;size:100;index"` // UUID for tracking - add index
-	Status          string    `gorm:"not null;size:20;index"`         // pending, expired, confirmed, cancelled - add index
-	LockExpiresAt   time.Time `gorm:"not null;index"`
-	PaymentIntentID string    `gorm:"size:255;index"` // from payment gateway - add index
+	ID              uint   `gorm:"primaryKey"`
+	UserID          uint   `gorm:"index;not null"`
+	User            User   `gorm:"foreignKey:UserID"`
+	EventID         uint   `gorm:"index;not null"`
+	Event           Event  `gorm:"foreignKey:EventID"`
+	SeatID          uint   `gorm:"index;not null"`
+	Seat            Seat   `gorm:"foreignKey:SeatID"`
+	Status          string `gorm:"not null;size:20;index"` // pending, expired, confirmed, cancelled - add index
+	PaymentIntentID string `gorm:"size:255;index"`         // from payment gateway - add index
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }
 
 type Booking struct {
 	ID              uint       `gorm:"primaryKey"`
-	BookingNumber   string     `gorm:"unique;not null;size:50;index"`
 	UserID          uint       `gorm:"index;not null"`
 	User            User       `gorm:"foreignKey:UserID"`
 	EventID         uint       `gorm:"index;not null"`
 	Event           Event      `gorm:"foreignKey:EventID"`
-	SeatID          uint       `gorm:"index;not null"`
+	SeatID          uint       `gorm:"index;not null;uniqueIndex:idx_seat_active_booking,where:status = 'confirmed' AND deleted_at IS NULL"`
 	Seat            Seat       `gorm:"foreignKey:SeatID"`
 	BookingIntentID *uint      `gorm:"index"`                  // reference to the intent that created this booking
 	Status          string     `gorm:"not null;size:20;index"` // confirmed, cancelled, refunded - add index

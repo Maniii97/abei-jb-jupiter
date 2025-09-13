@@ -1,7 +1,9 @@
 package main
 
 import (
-	"api/pkg/logging"
+	"api/internal/container"
+	"api/internal/routes"
+	logger "api/pkg/logging"
 	"context"
 	"net/http"
 	"os"
@@ -11,7 +13,7 @@ import (
 )
 
 func startServer(server *http.Server) {
-	logger.Info("Started server on :8080")
+	logger.Info("Started server on " + server.Addr)
 	err := server.ListenAndServe()
 	if err != nil && err != http.ErrServerClosed {
 		logger.Fatalf("Server failed to start: %v", err)
@@ -19,19 +21,24 @@ func startServer(server *http.Server) {
 }
 
 func main() {
-	// if err := config.Load(); err != nil {
-	// 	log.Printf("Warning: Failed to load .env file: %v", err)
-	// }
-
-	// router := routes.SetupRoutes()
-
+	// Initialize logger
 	logger.Init(logger.Config{
 		Level: "debug",
 	})
 
+	// Create dependency container
+	deps, err := container.NewContainer()
+	if err != nil {
+		logger.Fatalf("Failed to initialize dependencies: %v", err)
+	}
+	defer deps.Close()
+
+	// Setup routes with dependency injection
+	router := routes.SetupRoutes(deps)
+
 	server := &http.Server{
-		Addr: ":8080",
-		// Handler: router,
+		Addr:    deps.Config.GetPort(),
+		Handler: router,
 	}
 
 	go startServer(server)
@@ -41,13 +48,13 @@ func main() {
 	<-quit
 	logger.Info("Shutting down server...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	// Give tasks time to finish cleanup
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
 
-	err := server.Shutdown(ctx)
-	if err != nil {
+	if err := server.Shutdown(shutdownCtx); err != nil {
 		logger.Fatalf("Server forced to shutdown: %v", err)
 	}
 
-	logger.Info("Server exited")
+	logger.Info("Server exiting")
 }

@@ -29,7 +29,9 @@ type VenueResponse struct {
 	City        string `json:"city"`
 	State       string `json:"state"`
 	Country     string `json:"country"`
-	Capacity    int    `json:"capacity"`
+	Rows        int    `json:"rows"`
+	Columns     int    `json:"columns"`
+	Capacity    int    `json:"capacity"` // calculated as rows * columns
 	Description string `json:"description"`
 }
 
@@ -62,9 +64,8 @@ type EventDetailResponse struct {
 // Seat responses
 type SeatResponse struct {
 	ID          uint    `json:"id"`
-	SeatNumber  string  `json:"seat_number"`
-	Row         string  `json:"row"`
-	Section     string  `json:"section"`
+	Row         int     `json:"row"`
+	Column      int     `json:"column"`
 	SeatType    string  `json:"seat_type"`
 	Price       float64 `json:"price"`
 	IsAvailable bool    `json:"is_available"`
@@ -73,17 +74,14 @@ type SeatResponse struct {
 
 // Booking responses
 type BookingIntentResponse struct {
-	ID            uint          `json:"id"`
-	IntentID      string        `json:"intent_id"`
-	Event         EventResponse `json:"event"`
-	Seat          SeatResponse  `json:"seat"`
-	Status        string        `json:"status"`
-	LockExpiresAt time.Time     `json:"lock_expires_at"`
+	ID     uint          `json:"id"`
+	Event  EventResponse `json:"event"`
+	Seat   SeatResponse  `json:"seat"`
+	Status string        `json:"status"`
 }
 
 type BookingResponse struct {
 	ID            uint          `json:"id"`
-	BookingNumber string        `json:"booking_number"`
 	Event         EventResponse `json:"event"`
 	Seat          SeatResponse  `json:"seat"`
 	Status        string        `json:"status"`

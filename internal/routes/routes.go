@@ -21,6 +21,13 @@ func SetupRoutes(deps *container.Container) *gin.Engine {
 	// global rate limiting - 1000 requests per minute per IP
 	r.Use(deps.RateLimiter.RateLimit(1000, time.Minute))
 
+	// heath check endpoint
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"status": "ok",
+		})
+	})
+
 	// Public API routes
 	api := r.Group("/api")
 	{

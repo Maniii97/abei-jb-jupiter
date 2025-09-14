@@ -3,6 +3,7 @@ package routes
 import (
 	"api/internal/container"
 	"api/internal/handlers"
+	"api/internal/middleware"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -17,9 +18,18 @@ func SetupRoutes(deps *container.Container) *gin.Engine {
 	waitlistHandler := handlers.NewWaitlistHandler(deps.WaitlistService)
 
 	r := gin.Default()
+	// CORS middleware
+	r.Use(middleware.CORSMiddleware())
 
 	// global rate limiting - 1000 requests per minute per IP
 	r.Use(deps.RateLimiter.RateLimit(1000, time.Minute))
+
+	// heath check endpoint
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"status": "ok",
+		})
+	})
 
 	// Public API routes
 	api := r.Group("/api")
